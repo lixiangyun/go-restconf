@@ -19,20 +19,51 @@ var (
 	help    bool
 )
 
+/*
+   {
+     "ietf-restconf:restconf" : {
+       "data" : {},
+       "operations" : {},
+       "yang-library-version" : "2016-06-21"
+     }
+   }
+
+	<restconf	xmlns="urn:ietf:params:xml:ns:yang:ietf-restconf">
+			<data/>
+			<operations/>
+			<yang-library-version>2016-06-21</yang-library-version>
+	</restconf>
+
+*/
+
+type YangLibVer struct {
+	XMLName xml.Name `json:"-" xml:"yang-library-version"`
+	XmlLns  string   `json:"-" xml:"xmlns,attr"`
+	Version string   `json:"yang-library-version" xml:",innerxml"`
+}
+
+type RestConfRoot struct {
+	XMLName xml.Name `json:"-" xml:"restconf"`
+	XmlLns  string   `json:"-" xml:"xmlns,attr"`
+
+	Data       struct{} `json:"data" xml:"data"`
+	Operations struct{} `json:"operations" xml:"operations"`
+	Yang       string   `json:"yang-library-version" xml:"yang-library-version"`
+}
+
+type RestConfJson struct {
+	Root RestConfRoot `json:"ietf-restconf:restconf"`
+}
+
 var (
 	APPLICATION_XRD_XML   = "application/xrd+xml"
 	APPLICATION_DATA_XML  = "application/yang-data+xml"
 	APPLICATION_DATA_JSON = "application/yang-data+json"
 
-	RESTCONF_PREFIX = "/restconf"
-
-	PUBLIC_XMLNS = "urn:ietf:params:xml:ns:yang:ietf-restconf"
-
+	RESTCONF_PREFIX      = "/restconf"
+	PUBLIC_XMLNS         = "urn:ietf:params:xml:ns:yang:ietf-restconf"
 	YANG_LIBRARY_VERSION = "2016-06-21"
-
-	DEFAULT_LISTEN_ADDR = ":408"
-
-	yangLibVer = YangLibVer{Version: YANG_LIBRARY_VERSION, XmlLns: PUBLIC_XMLNS}
+	DEFAULT_LISTEN_ADDR  = ":408"
 )
 
 func init() {
@@ -41,7 +72,6 @@ func init() {
 	flag.BoolVar(&verbose, "v", false, "show version")
 	flag.StringVar(&addr, "addr", DEFAULT_LISTEN_ADDR, "restconf listen address")
 
-	// 改变默认的 Usage
 	flag.Usage = usage
 }
 
@@ -54,12 +84,6 @@ func usage() {
 `)
 
 	flag.PrintDefaults()
-}
-
-type YangLibVer struct {
-	XMLName xml.Name `json:"-" xml:"yang-library-version"`
-	XmlLns  string   `json:"-" xml:"xmlns,attr"`
-	Version string   `json:"yang-library-version" xml:",innerxml"`
 }
 
 type RestConf struct {
@@ -118,16 +142,41 @@ func (restconf *RestConf) HostMeta(rsp http.ResponseWriter, req *http.Request) {
 
 func (restconf *RestConf) Root(rsp http.ResponseWriter, req *http.Request) {
 
-	/*
-	   {
-	     "ietf-restconf:restconf" : {
-	       "data" : {},
-	       "operations" : {},
-	       "yang-library-version" : "2016-06-21"
-	     }
-	   }
-	*/
+	var body []byte
+	var err error
 
+	format := req.Header.Get("Accept")
+
+	root := RestConfRoot{
+		XmlLns: PUBLIC_XMLNS,
+		Yang:   YANG_LIBRARY_VERSION}
+
+	switch format {
+	case APPLICATION_DATA_XML:
+		{
+			body, err = xml.Marshal(root)
+		}
+	case APPLICATION_DATA_JSON:
+		{
+			rootjson := RestConfJson{Root: root}
+			body, err = json.Marshal(rootjson)
+		}
+	default:
+		{
+			http.Error(rsp, "Accept is incorrect!", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if err != nil {
+		http.Error(rsp, "Marshal failed!"+err.Error(), http.StatusExpectationFailed)
+		return
+	}
+
+	rsp.Header().Set("Content-Type", format)
+	rsp.WriteHeader(http.StatusOK)
+
+	fmt.Fprint(rsp, string(body))
 }
 
 func (restconf *RestConf) Data(rsp http.ResponseWriter, req *http.Request) {
@@ -143,16 +192,18 @@ func (restconf *RestConf) YangLibVer(rsp http.ResponseWriter, req *http.Request)
 	var body []byte
 	var err error
 
+	yanglibver := YangLibVer{Version: YANG_LIBRARY_VERSION, XmlLns: PUBLIC_XMLNS}
+
 	format := req.Header.Get("Accept")
 
 	switch format {
 	case APPLICATION_DATA_XML:
 		{
-			body, err = xml.Marshal(yangLibVer)
+			body, err = xml.Marshal(yanglibver)
 		}
 	case APPLICATION_DATA_JSON:
 		{
-			body, err = json.Marshal(yangLibVer)
+			body, err = json.Marshal(yanglibver)
 		}
 	default:
 		{
