@@ -11,6 +11,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/lixiangyun/go-restconf/yang"
 )
 
 var (
@@ -255,11 +257,57 @@ func (restconf *RestConf) ServeHTTP(rsp http.ResponseWriter, req *http.Request) 
 	http.NotFound(rsp, req)
 }
 
+func YangModulesLoad(ms *yang.Modules, modules ...string) error {
+	for _, name := range modules {
+		err := ms.Read(name)
+		if err != nil {
+			log.Println(err.Error())
+			continue
+		}
+	}
+	return nil
+}
+
+func YangPathSet(paths ...string) {
+	for _, path := range paths {
+		expanded, err := yang.PathsWithModules(path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			continue
+		}
+		yang.AddPath(expanded...)
+	}
+}
+
 func main() {
 	flag.Parse()
 	if help || verbose {
 		flag.Usage()
 		return
+	}
+
+	YangPathSet("./models")
+
+	ms := yang.NewModules()
+
+	YangModulesLoad(ms, "base")
+
+	// Process the read files, exiting if any errors were found.
+	errs := ms.Process()
+
+	if len(errs) > 0 {
+		for _, err := range errs {
+			log.Println(err.Error())
+		}
+		os.Exit(1)
+	}
+
+	entries := make([]*yang.Entry, len(ms.Modules))
+	x := 0
+	for _, mod := range ms.Modules {
+		log.Println("models: ", mod.NName())
+		entries[x] = yang.ToEntry(mod)
+		x++
 	}
 
 	server := NewRestConf()
